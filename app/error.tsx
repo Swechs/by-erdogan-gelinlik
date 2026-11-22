@@ -1,0 +1,2 @@
+'use client';
+export default function ErrorPage({reset}:{reset:()=>void}){return <main className="wrap innerPage"><p className="kicker">BY ERDOĞAN</p><h1>Kısa bir <em>ara.</em></h1><p>Atölyeye bağlantı kurulamadı. Birazdan yeniden deneyebilir veya bizimle doğrudan iletişime geçebilirsiniz.</p><button className="button dark" onClick={reset}>Yeniden dene</button><p><a className="under" href="https://wa.me/905325122100">WhatsApp ile iletişim</a></p></main>}

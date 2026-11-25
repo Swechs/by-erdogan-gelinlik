@@ -1,6 +1,7 @@
 import {useEffect, useRef, useState} from 'react';
 import type {Data, Model} from './types';
-import {request, readFile, err, event, src} from './types';
+import {request, readFile, err, event, src, ApiError} from './types';
+import {tryOnMode, isTerminal, isFinalStatus, MAX_POLL_MS, downloadName} from './tryOnRules';
 import {freeTryOn, type FreeProgress} from './freeTryOn';
 import Icon from './Icons';
 
@@ -10,6 +11,9 @@ type Trial = {
   state: string;
   photo: string;
   free: boolean;
+  started: number;
+  failures?: number;
+  mime?: string;
   url?: string;
   error?: string;
 };
@@ -44,10 +48,12 @@ export default function TryOn({
   const mounted = useRef(false);
   const operation = useRef<AbortController | null>(null);
   const model = data.models.find(m => m.id === id);
-  const useFree = !!data.freeTryOn && (!data.tryOn || !model?.tryOn || model.concept);
-  const allowed = !data.preview && !!model && (useFree || (model.tryOn && data.tryOn && !model.concept));
+  const mode = tryOnMode(data, model);
+  const useFree = mode === 'free';
+  const allowed = mode !== null;
   const selected = trials.find(t => t.key === active);
   const resultModel = data.models.find(m => m.id === selected?.model);
+  const shownModel = selected ? resultModel : model;
 
   useEffect(() => {
     mounted.current = true;
@@ -63,35 +69,45 @@ export default function TryOn({
   }, []);
 
   useEffect(() => {
-    const pending = trials.filter(t => !t.free && !['succeeded', 'failed'].includes(t.state));
+    const pending = trials.filter(t => !t.free && !isTerminal(t.state));
     if (!pending.length) return;
     let stopped = false;
+    const update = (key: string, patch: Partial<Trial>) => {
+      if (!stopped) setTrials(list => list.map(t => t.key === key ? {...t, ...patch} : t));
+    };
     const timer = setTimeout(async () => {
       for (const trial of pending) {
+        if (stopped) return;
+        if (Date.now() - trial.started > MAX_POLL_MS) {
+          update(trial.key, {state: 'failed', error: 'Deneme beklenenden uzun sürdü ve takibi durduruldu. Yeniden deneyebilirsiniz.'});
+          continue;
+        }
         try {
           const result = await request('try/status', {key: trial.key});
-          let url: string | undefined;
           if (result.state === 'succeeded') {
             const response = await fetch('/api/try/image', {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({key: trial.key})
             });
-            if (!response.ok) throw Error('Sonuç görseli alınamadı.');
-            url = URL.createObjectURL(await response.blob());
-            if (stopped) {
-              URL.revokeObjectURL(url);
-              return;
-            }
+            if (!response.ok) throw new ApiError('Sonuç görseli alınamadı.', response.status);
+            const blob = await response.blob();
+            if (stopped) return;
+            const url = URL.createObjectURL(blob);
             urls.current.push(url);
-          }
-          if (!stopped) {
-            setTrials(list => list.map(t => t.key === trial.key
-              ? {...t, state: result.state, url, error: result.error}
-              : t));
+            update(trial.key, {state: 'succeeded', url, mime: blob.type, failures: 0});
+            event('try_on_completed');
+          } else {
+            update(trial.key, {state: result.state, error: result.error, failures: 0});
           }
         } catch (error) {
-          if (!stopped) setMessage(err(error));
+          if (error instanceof ApiError && isFinalStatus(error.status)) {
+            update(trial.key, {state: 'expired', error: 'Bu denemenin süresi doldu veya silindi. Yeni bir deneme başlatabilirsiniz.'});
+          } else if ((trial.failures || 0) >= 4) {
+            update(trial.key, {state: 'failed', error: 'Deneme durumu alınamadı. Bağlantınızı kontrol edip yeniden deneyin.'});
+          } else {
+            update(trial.key, {failures: (trial.failures || 0) + 1});
+          }
         }
       }
       if (!stopped) setPollSequence(n => n + 1);
@@ -102,15 +118,20 @@ export default function TryOn({
     };
   }, [trials, pollSequence]);
 
-  async function start() {
-    if (!allowed || !photo || !consent || busy || !model) return;
+  async function start(retry?: Trial) {
+    const modelId = retry ? retry.model : id;
+    const target = data.models.find(m => m.id === modelId);
+    const image = retry ? retry.photo : photo;
+    const targetMode = tryOnMode(data, target);
+    if (!targetMode || !target || !image || busy || (!retry && !consent)) return;
+    const free = targetMode === 'free';
     setMessage('');
     setBusy(true);
-    if (!useFree) {
+    if (!free) {
       try {
-        const result = await request('try/start', {model: id, photo, consent});
+        const result = await request('try/start', {model: modelId, photo: image, consent: true});
         if (!mounted.current) return;
-        setTrials(list => [...list, {...result, model: id, photo, free: false}]);
+        setTrials(list => [...list.filter(t => t.key !== retry?.key), {key: result.key, state: result.state, model: modelId, photo: image, free: false, started: Date.now()}]);
         setActive(result.key);
         event('try_on_started');
       } catch (error) {
@@ -125,12 +146,13 @@ export default function TryOn({
     const controller = new AbortController();
     operation.current = controller;
     const timeout = setTimeout(() => controller.abort('timeout'), 240000);
-    setTrials(list => [...list, {key, model: id, photo, free: true, state: 'uploading'}]);
+    setTrials(list => [...list.filter(t => t.key !== retry?.key), {key, model: modelId, photo: image, free: true, state: 'uploading', started: Date.now()}]);
     setActive(key);
+    event('try_on_started');
     try {
       const blob = await freeTryOn({
-        person: photo,
-        garment: src(model.images[0]),
+        person: image,
+        garment: src(target.images[0]),
         signal: controller.signal,
         progress: (state: FreeProgress) => {
           if (mounted.current && !controller.signal.aborted) {
@@ -141,13 +163,13 @@ export default function TryOn({
       if (!mounted.current || controller.signal.aborted) return;
       const url = URL.createObjectURL(blob);
       urls.current.push(url);
-      setTrials(list => list.map(t => t.key === key ? {...t, state: 'succeeded', url} : t));
+      setTrials(list => list.map(t => t.key === key ? {...t, state: 'succeeded', url, mime: blob.type} : t));
       event('try_on_completed');
     } catch (error) {
       if (mounted.current) {
         const text = controller.signal.reason === 'timeout'
           ? 'Ücretsiz servis uzun süre yanıt vermedi. Daha sonra yeniden deneyebilirsiniz.'
-          : controller.signal.aborted ? 'Deneme takibi durduruldu.' : err(error);
+          : controller.signal.aborted ? 'Deneme iptal edildi.' : err(error);
         setTrials(list => list.map(t => t.key === key ? {...t, state: 'failed', error: text} : t));
       }
     } finally {
@@ -164,18 +186,23 @@ export default function TryOn({
       if (selected.url) URL.revokeObjectURL(selected.url);
       setTrials(list => list.filter(t => t.key !== selected.key));
       setActive('');
-      setMessage('Bu cihazdaki deneme kaldırıldı. Hugging Face dosyalarının saklanmasını sağlayıcı yönetir.');
+      setMessage('Sonuç bu cihazdan kaldırıldı. Hugging Face demosuna gönderilen dosyalar buradan silinemez; saklanmalarını sağlayıcı yönetir.');
       return;
     }
     setBusy(true);
-    try {
-      await request('try/delete', {key: selected.key});
+    const forget = (text: string) => {
       if (selected.url) URL.revokeObjectURL(selected.url);
       setTrials(list => list.filter(t => t.key !== selected.key));
       setActive('');
-      setMessage('Denemenize erişim kapatıldı. Silme işlemi sıraya alındı.');
+      setMessage(text);
+    };
+    try {
+      await request('try/delete', {key: selected.key});
+      forget('Denemeye erişim kapatıldı ve sağlayıcıya silme talebi gönderildi.');
     } catch (error) {
-      setMessage(err(error));
+      if (error instanceof ApiError && isFinalStatus(error.status)) {
+        forget('Bu denemenin süresi zaten dolmuştu; sonuç bu cihazdan da kaldırıldı.');
+      } else setMessage(err(error));
     } finally {
       setBusy(false);
     }
@@ -191,8 +218,8 @@ export default function TryOn({
     </div>
     <div className="tryGrid">
       <div className="tryVisual">
-        <img src={src(model?.images[0] || data.content.hero)} alt={model?.name || 'Gelinlik'}/>
-        <span>{model?.name}{model?.concept ? ' · Konsept' : ''}</span>
+        <img src={src(shownModel?.images[0] || data.content.hero)} alt={shownModel?.name || 'Gelinlik'}/>
+        <span>{shownModel?.name}{shownModel?.concept ? ' · Konsept' : ''}</span>
       </div>
       <div className="tryForm">
         <h2 id="tryTitle">Hayalini Kurduğun Gelinliği <em>Üzerinde Gör.</em></h2>
@@ -244,7 +271,7 @@ export default function TryOn({
               ? 'Fotoğrafımın bu koşullarla Hugging Face / FASHN demosuna gönderilmesine ve dijital prova için işlenmesine izin veriyorum.'
               : 'Fotoğrafımın seçtiğim gelinliği üzerimde görselleştirmek için işlenmesine izin veriyorum.'}</span>
           </label>
-          <button className="btn dark" disabled={!photo || !consent || busy} onClick={start}>
+          <button className="btn dark" disabled={!photo || !consent || busy} onClick={() => start()}>
             {busy ? 'Gönderiliyor…' : useFree ? 'Ücretsiz provayı oluştur' : 'Dijital provayı oluştur'}
           </button>
         </div>}
@@ -267,20 +294,22 @@ export default function TryOn({
               <input type="range" min="0" max="100" value={split} onChange={e => setSplit(+e.target.value)}/>
             </label>
             <div className="linkrow">
-              <a className="under" href={selected.url} download={'By-Erdogan-' + resultModel?.name + '.webp'}>Sonucu indir</a>
+              <a className="under" href={selected.url} download={downloadName(resultModel?.name, selected.mime)}>Sonucu indir</a>
               <button onClick={() => toggle(selected.model)}>{favorites.includes(selected.model) ? 'Favoriden çıkar' : 'Favorilere ekle'}</button>
             </div>
             <p>Bu gelinliği gerçekte denemek ister misiniz?</p>
             <a className="btn dark" href={booking(resultModel)} onClick={close}>Bu Gelinlik İçin Randevu Al</a>
           </> : <p className="notice">
-            {selected.state === 'failed' ? selected.error || 'Deneme tamamlanamadı.'
+            {isTerminal(selected.state) ? selected.error || 'Deneme tamamlanamadı.'
               : progressLabels[selected.state] || 'Dijital provanız hazırlanıyor…'}
           </p>}
+          {!selected.url && isTerminal(selected.state) && tryOnMode(data, resultModel) &&
+            <button className="btn line" disabled={busy} onClick={() => start(selected)}>Aynı fotoğrafla yeniden dene</button>}
           <div className="linkrow">
             <button disabled={busy} onClick={() => setActive('')}>Başka bir model dene</button>
-            <button onClick={remove}>{selected.free ? busy ? 'Takibi durdur ve kaldır' : 'Cihazdaki sonucu kaldır' : 'Denemeyi sil'}</button>
+            <button onClick={remove}>{selected.free ? !isTerminal(selected.state) ? 'Denemeyi iptal et' : selected.url ? 'Sonucu bu cihazdan kaldır' : 'Denemeyi kapat' : 'Denemeyi sil'}</button>
           </div>
-          {selected.free && selected.state === 'failed' && <a className="under"
+          {selected.free && isTerminal(selected.state) && !selected.url && <a className="under"
             href="https://huggingface.co/spaces/fashn-ai/fashn-vton-1.5" target="_blank" rel="noreferrer">
             Hugging Face üzerinde dene
           </a>}

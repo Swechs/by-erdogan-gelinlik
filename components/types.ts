@@ -3,7 +3,7 @@ export type Story={id:string,title:string,category:string,image:string,intro:str
 export type Content={hero:string,stories:Story[]};
 export type Data={freeTryOn?:boolean,models:Model[],content:Content,tryOn:boolean,bookingReady:boolean,notifications:boolean,preview:boolean,transfer:string,controller:string,privacyEmail:string,analytics:{ga:string,pixel:string}};
 export type Booking={id:string,name:string,phone:string,model:string,start:string,wedding:string,status:string,notify:number,delivery:string|null};
-export type Dashboard={settings?:{controller:string,privacyEmail:string,transfer:string},models:Model[],content:Content,slots:{start:string,enabled:number}[],available:string[],bookings:Booking[],usage:{day:string,tries:number}[],tryOn:boolean,notifications:boolean,bookingsEnabled:boolean};
+export type Dashboard={settings?:{controller:string,privacyEmail:string,transfer:string},models:Model[],content:Content,slots:{start:string,enabled:number}[],available:string[],bookings:Booking[],usage:{day:string,tries:number}[],tryOn:boolean,notifications:boolean,emailNotifications?:boolean,bookingsEnabled:boolean};
 export const statuses:Record<string,string>={pending:'Onay bekliyor',confirmed:'Onaylandı',rejected:'Reddedildi'};
 export const dayLabel=(s:string)=>new Date(s).toLocaleDateString('tr-TR',{day:'numeric',month:'long',weekday:'long',timeZone:'Europe/Istanbul'});
 export const hourLabel=(s:string)=>new Date(s).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Istanbul'});

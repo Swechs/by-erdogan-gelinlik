@@ -20,6 +20,7 @@ type Trial = {
 
 const progressLabels: Record<string, string> = {
   uploading: 'Fotoğraflar yükleniyor…',
+  waiting: 'Ücretsiz servis şu an yoğun. Sıra açılınca denemeniz otomatik başlayacak…',
   queued: 'Denemeniz sırada. Bu işlem birkaç dakika sürebilir.',
   processing: 'Dijital provanız hazırlanıyor…',
   downloading: 'Sonuç görseliniz alınıyor…'
@@ -213,7 +214,7 @@ export default function TryOn({
   return <dialog ref={dialog} className="tryDialog"
     onCancel={e => {e.preventDefault(); close();}} aria-labelledby="tryTitle">
     <div className="dialogTop">
-      <span className="kicker">BY ERDOĞAN · SANAL PROVA</span>
+      <span className="kicker">Sanal deneme</span>
       <button className="iconBtn" aria-label="Sanal denemeyi kapat" onClick={close}><Icon name="close"/></button>
     </div>
     <div className="tryGrid">
@@ -222,13 +223,13 @@ export default function TryOn({
         <span>{shownModel?.name}{shownModel?.concept ? ' · Konsept' : ''}</span>
       </div>
       <div className="tryForm">
-        <h2 id="tryTitle">Hayalini Kurduğun Gelinliği <em>Üzerinde Gör.</em></h2>
-        <p>Bir fotoğraf, bir hayal ve sana özel bir ilk bakış.</p>
+        <h2 id="tryTitle">Gelinliği üzerinizde görün.</h2>
+        <p>Bir fotoğraf yükleyin, seçtiğiniz model üzerinizde dijital olarak canlansın.</p>
         {useFree && <p className="hint">Ücretsiz deneysel prova · FASHN / Hugging Face. Kullanım kotaya ve servis yoğunluğuna bağlıdır.</p>}
         <ol className="steps">
-          <li>01 <span>Gelinliğini seç</span></li>
-          <li>02 <span>Fotoğrafını yükle</span></li>
-          <li>03 <span>Hayalini gör</span></li>
+          <li>1 <span>Gelinliği seçin</span></li>
+          <li>2 <span>Fotoğrafınızı yükleyin</span></li>
+          <li>3 <span>Sonucu görün</span></li>
         </ol>
         <label>Gelinlik modeli
           <select value={id} disabled={busy} onChange={e => {

@@ -4,3 +4,6 @@ ADMIN_EMAIL=yonetim@example.test
 ADMIN_PASSWORD_HASH=
 # At least 32 random characters, e.g. node -e "console.log(crypto.randomBytes(32).toString('base64url'))"
 SESSION_SECRET=
+RESEND_API_KEY=
+NOTIFY_EMAIL=
+# NOTIFY_FROM=By Erdoğan <randevu@alanadi.com>

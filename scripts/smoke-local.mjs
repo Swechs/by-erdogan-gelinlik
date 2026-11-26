@@ -83,6 +83,17 @@ await check('rescheduling to a free slot works and frees the old one', async () 
   assert.ok((await call('slots')).json.slots.includes(s1));
 });
 await check('closing a slot with a booking is blocked', async () => assert.equal((await call('admin/slot', {start: s3, enabled: false}, {auth: true})).status, 409));
+const temporary = 'gecici-' + crypto.randomUUID().slice(0, 12);
+await check('password change needs the current password', async () => assert.equal((await call('admin/password', {current: 'wrong-password', next: temporary}, {auth: true})).status, 403));
+await check('password change keeps this session and the new password works', async () => {
+  assert.equal((await call('admin/password', {current: password, next: temporary}, {auth: true})).status, 200);
+  assert.equal((await call('admin', undefined, {auth: true})).status, 200);
+  const other = cookie; cookie = '';
+  assert.equal((await call('auth/login', {email, password}, {auth: true})).status, 401);
+  assert.equal((await call('auth/login', {email, password: temporary}, {auth: true})).status, 200);
+  assert.equal((await call('admin/password', {current: temporary, next: password}, {auth: true})).status, 200);
+  void other;
+});
 await check('logout ends the session', async () => {
   await call('auth/logout', {}, {auth: true});
   assert.equal((await call('admin', undefined, {auth: true})).status, 401);

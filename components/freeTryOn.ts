@@ -1,7 +1,7 @@
 const space = 'https://fashn-ai-fashn-vton-1-5.hf.space';
 const api = space + '/gradio_api';
 
-export type FreeProgress = 'uploading' | 'queued' | 'processing' | 'downloading';
+export type FreeProgress = 'uploading' | 'waiting' | 'queued' | 'processing' | 'downloading';
 
 function providerMessage(message: string): string {
   if (/quota|exceeded|daily|gpu.*limit|zerogpu/i.test(message)) {
@@ -101,12 +101,22 @@ export async function freeTryOn({
   const personFile = await upload(personBlob, 'person.jpg', signal);
   const garmentFile = await upload(garmentBlob, 'garment.webp', signal);
   signal.throwIfAborted();
-  const response = await fetch(api + '/call/try_on', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: [personFile, garmentFile, 'one-pieces', 'model', 30, 1.5, 42, true] }),
-    signal
-  });
+  // The free demo rejects new jobs while its shared queue is full; wait and ask again until the caller's deadline.
+  let response: Response;
+  for (;;) {
+    response = await fetch(api + '/call/try_on', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: [personFile, garmentFile, 'one-pieces', 'model', 30, 1.5, 42, true] }),
+      signal
+    });
+    if (response.status !== 503 && response.status !== 429) break;
+    progress('waiting');
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, 15000);
+      signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+    });
+  }
   const job = await readResponse(response);
   if (!job || typeof job !== 'object' || !('event_id' in job) ||
       typeof job.event_id !== 'string' || !/^[a-z0-9]{16,64}$/.test(job.event_id)) {

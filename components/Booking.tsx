@@ -1,6 +1,6 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import type {Data} from './types';
-import {request,err,fullDate,dayLabel,hourLabel,statuses,wa,event} from './types';
+import {request,err,fullDate,dayLabel,hourLabel,statuses,wa,event,ApiError} from './types';
 import Icon from './Icons';
 type Receipt={lookup?:string,start:string,status:string,model:string};
 export default function Booking({data,initial=''}:{data:Data,initial?:string}){
@@ -9,10 +9,21 @@ export default function Booking({data,initial=''}:{data:Data,initial?:string}){
  useEffect(()=>{if(data.bookingReady&&!data.preview)void reload()},[data.bookingReady,data.preview]);
  useEffect(()=>{M(initial)},[initial]);
  const days=[...new Set(slots.map(dayLabel))];const chosen=data.models.find(x=>x.id===model);
- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();E('');B(true);const f=new FormData(e.currentTarget);
- try{const r=await request<Receipt>('book',{name:f.get('name'),surname:f.get('surname'),phone:f.get('phone'),wedding:f.get('wedding'),model,start,notice:f.has('notice'),notify:f.has('notify')});R(r);C(r.lookup||'');event('appointment_requested')}catch(e){E(err(e));T('');await reload()}finally{B(false)}}
+ const [uncertain,X]=useState(false);
+ // Same key for retries of one submission, so the server can return the original booking instead of a duplicate.
+ const requestKey=useRef('');
+ async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();if(busy)return;E('');B(true);const f=new FormData(e.currentTarget);let r:Receipt;requestKey.current||=crypto.randomUUID();
+ try{r=await request<Receipt>('book',{request:requestKey.current,name:f.get('name'),surname:f.get('surname'),phone:f.get('phone'),wedding:f.get('wedding'),model,start,notice:f.has('notice'),notify:f.has('notify')})}
+ catch(e){const status=e instanceof ApiError?e.status:0;
+  // 502/504 or a network error: the request may have reached the atelier even though no answer came back.
+  if(!status||status===502||status===504){X(true);E('Bağlantı yanıt vermedi; talebiniz kaydedilmiş olabilir. Aynı saat için tekrar göndermeden önce atölyeyle WhatsApp üzerinden teyit edin.')}
+  else if(status===409&&uncertain)E('Bu saat artık dolu görünüyor. Az önceki talebiniz kaydedilmiş olabilir; lütfen atölyeyle WhatsApp üzerinden teyit edin.');
+  else E(err(e));
+  if(status&&status!==429){T('');try{await reload()}catch{}}B(false);return}
+ // The booking is saved from here on; later failures must not look like a failed booking.
+ R(r);C(r.lookup||'');X(false);requestKey.current='';B(false);try{event('appointment_requested')}catch{}}
  async function lookup(e:React.FormEvent){e.preventDefault();Q('');if(data.preview){Q('Takip kodları, mağazanın çevrim içi randevu sisteminde sorgulanır.');return}B(true);try{R({...await request<Receipt>('booking/status',{lookup:code.trim()}),lookup:code.trim()});U(false)}catch(e){Q(err(e))}finally{B(false)}}
- return <main className="wrap innerPage"><a className="crumb" href="/">Ana sayfa</a><div className="bookingGrid"><aside><p className="kicker">ISPARTA ATÖLYESİ</p><h1>İlk <em>provanız.</em></h1><p className="lead">Birlikte birkaç silüet deneyelim. Aynaya baktığınızda gözünüzün hangi ayrıntıda kaldığını keşfedelim.</p><div className="visit"><Icon name="pin"/><span>Yayla Mahallesi, Cumhuriyet Caddesi<br/>No. 25/3, Merkez · Isparta</span></div><a href={wa} target="_blank" rel="noreferrer" className="under">Atölyeye WhatsApp’tan ulaşın</a></aside>
+ return <main className="wrap innerPage"><a className="crumb" href="/">Ana sayfa</a><div className="bookingGrid"><aside><p className="kicker">Isparta atölyesi</p><h1>İlk provanız.</h1><p className="lead">Birlikte birkaç silüet deneyelim. Aynaya baktığınızda gözünüzün hangi ayrıntıda kaldığını keşfedelim.</p><div className="visit"><Icon name="pin"/><span>Yayla Mahallesi, Cumhuriyet Caddesi<br/>No. 25/3, Merkez · Isparta</span></div><a href={wa} target="_blank" rel="noreferrer" className="under">Atölyeye WhatsApp’tan ulaşın</a></aside>
  <section className="panel"><div className="tabs"><button className={!track?'on':''} onClick={()=>{U(false);R(null)}}>Prova randevusu</button><button className={track?'on':''} onClick={()=>{U(true);R(null);Q('')}}>Randevumu sorgula</button></div>
  {track?<form onSubmit={lookup} className="stack"><h2>Randevu takibi</h2><label>Özel takip kodunuz<input value={code} onChange={e=>C(e.target.value)} required maxLength={100}/></label><button disabled={busy} className="btn dark">Durumu görüntüle</button><p role="status">{trackMsg}</p></form>:result?<div className="stack" aria-live="polite"><p className="kicker">{statuses[result.status]}</p><h2>Prova talebiniz</h2><p>{fullDate(result.start)}<br/>{result.model||'Atölyede birlikte seçim'}</p><p>Güncel durumu bu kişisel takip koduyla görebilirsiniz. Kodunuzu saklayın.</p><code className="receipt">{result.lookup}</code><button className="btn line" onClick={()=>{U(true);R(null)}}>Durumu tekrar sorgula</button></div>:<form className="stack" onSubmit={submit}><h2>Provanızı planlayın</h2><label>Denemek istediğiniz gelinlik<select value={model} onChange={e=>M(e.target.value)}><option value="">Atölyede birlikte seçelim</option>{data.models.map(m=><option key={m.id} value={m.id}>{m.name}{m.concept?' · konsept referansı':''}</option>)}</select></label>
  {chosen?.concept&&<p className="hint">Bu konsept model, prova için stil tercihinizi belirtir. Mağazadaki seçenekleri danışmanınızla keşfedebilirsiniz.</p>}

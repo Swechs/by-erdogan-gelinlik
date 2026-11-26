@@ -11,10 +11,20 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "admin:hash": "node scripts/hash-password.mjs",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "admin:setup": "node scripts/admin-setup.mjs"
   },
   "dependencies": {
-    "next": "16.3.4",
+    "@fontsource-variable/bodoni-moda": "5.3.0",
+    "@fontsource-variable/jost": "5.3.0",
+    "@opennextjs/cloudflare": "1.20.16",
+    "next": "16.4.6",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -22,6 +32,7 @@
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "wrangler": "4.159.0"
   }
 }

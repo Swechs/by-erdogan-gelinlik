@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "by-erdogan-gelinlik",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {"directory": ".open-next/assets", "binding": "ASSETS"},
+  "observability": {"enabled": true},
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "by-erdogan-gelinlik",
+      "database_id": "fd371496-7554-4146-a055-bbabbec6a7bb",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{"binding": "BUCKET", "bucket_name": "by-erdogan-gelinlik-media"}],
+  "vars": {
+    // Daily cap on paid AI try-ons across all visitors (cost control).
+    "TRYON_DAILY_LIMIT": "10"
+  }
+}

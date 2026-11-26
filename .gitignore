@@ -43,3 +43,8 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+# Cloudflare build output and local state
+/.open-next/
+/.dev.vars
+!/.dev.vars.example

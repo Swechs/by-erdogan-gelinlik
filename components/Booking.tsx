@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import type {Data} from './types';
 import {request,err,fullDate,dayLabel,hourLabel,statuses,wa,event,ApiError} from './types';
 import Icon from './Icons';
@@ -10,8 +10,10 @@ export default function Booking({data,initial=''}:{data:Data,initial?:string}){
  useEffect(()=>{M(initial)},[initial]);
  const days=[...new Set(slots.map(dayLabel))];const chosen=data.models.find(x=>x.id===model);
  const [uncertain,X]=useState(false);
- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();if(busy)return;E('');B(true);const f=new FormData(e.currentTarget);let r:Receipt;
- try{r=await request<Receipt>('book',{name:f.get('name'),surname:f.get('surname'),phone:f.get('phone'),wedding:f.get('wedding'),model,start,notice:f.has('notice'),notify:f.has('notify')})}
+ // Same key for retries of one submission, so the server can return the original booking instead of a duplicate.
+ const requestKey=useRef('');
+ async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();if(busy)return;E('');B(true);const f=new FormData(e.currentTarget);let r:Receipt;requestKey.current||=crypto.randomUUID();
+ try{r=await request<Receipt>('book',{request:requestKey.current,name:f.get('name'),surname:f.get('surname'),phone:f.get('phone'),wedding:f.get('wedding'),model,start,notice:f.has('notice'),notify:f.has('notify')})}
  catch(e){const status=e instanceof ApiError?e.status:0;
   // 502/504 or a network error: the request may have reached the atelier even though no answer came back.
   if(!status||status===502||status===504){X(true);E('Bağlantı yanıt vermedi; talebiniz kaydedilmiş olabilir. Aynı saat için tekrar göndermeden önce atölyeyle WhatsApp üzerinden teyit edin.')}
@@ -19,7 +21,7 @@ export default function Booking({data,initial=''}:{data:Data,initial?:string}){
   else E(err(e));
   if(status&&status!==429){T('');try{await reload()}catch{}}B(false);return}
  // The booking is saved from here on; later failures must not look like a failed booking.
- R(r);C(r.lookup||'');X(false);B(false);try{event('appointment_requested')}catch{}}
+ R(r);C(r.lookup||'');X(false);requestKey.current='';B(false);try{event('appointment_requested')}catch{}}
  async function lookup(e:React.FormEvent){e.preventDefault();Q('');if(data.preview){Q('Takip kodları, mağazanın çevrim içi randevu sisteminde sorgulanır.');return}B(true);try{R({...await request<Receipt>('booking/status',{lookup:code.trim()}),lookup:code.trim()});U(false)}catch(e){Q(err(e))}finally{B(false)}}
  return <main className="wrap innerPage"><a className="crumb" href="/">Ana sayfa</a><div className="bookingGrid"><aside><p className="kicker">ISPARTA ATÖLYESİ</p><h1>İlk <em>provanız.</em></h1><p className="lead">Birlikte birkaç silüet deneyelim. Aynaya baktığınızda gözünüzün hangi ayrıntıda kaldığını keşfedelim.</p><div className="visit"><Icon name="pin"/><span>Yayla Mahallesi, Cumhuriyet Caddesi<br/>No. 25/3, Merkez · Isparta</span></div><a href={wa} target="_blank" rel="noreferrer" className="under">Atölyeye WhatsApp’tan ulaşın</a></aside>
  <section className="panel"><div className="tabs"><button className={!track?'on':''} onClick={()=>{U(false);R(null)}}>Prova randevusu</button><button className={track?'on':''} onClick={()=>{U(true);R(null);Q('')}}>Randevumu sorgula</button></div>

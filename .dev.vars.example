@@ -1,0 +1,6 @@
+# Copy to .dev.vars for local development. Production values are set with `npx wrangler secret put <NAME>`.
+ADMIN_EMAIL=yonetim@example.test
+# Generate with: npm run admin:hash
+ADMIN_PASSWORD_HASH=
+# At least 32 random characters, e.g. node -e "console.log(crypto.randomBytes(32).toString('base64url'))"
+SESSION_SECRET=
